@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0b0d0a">
+  <title>Zona Muerta Extraccion</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0d0a;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #e9e8dc;
+      -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+    #unity-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block;
+      background: #0b0d0a; touch-action: none; outline: none; }
+    #carga { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      background: radial-gradient(circle at 50% 40%, #232a1c, #0b0d0a 70%); z-index: 2; text-align: center; padding: 16px; }
+    #carga h1 { margin: 0; font-size: clamp(28px, 7vw, 56px); letter-spacing: 2px; color: #dcb754; }
+    #carga p { margin: 0; color: #a3a896; font-size: 15px; }
+    #barra { width: min(420px, 80vw); height: 10px; border-radius: 5px; background: #2a3022; overflow: hidden; }
+    #relleno { width: 0%; height: 100%; background: #dcb754; transition: width .2s; }
+    #girar { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+      background: #0b0d0a; z-index: 3; text-align: center; padding: 24px; font-size: 18px; }
+    #girar .icono { font-size: 64px; animation: giro 1.6s ease-in-out infinite; }
+    @keyframes giro { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+    /* Solo en pantallas táctiles en vertical: el juego es horizontal. */
+    @media (orientation: portrait) and (pointer: coarse) { #girar { display: flex; } }
+    #error { position: fixed; left: 16px; right: 16px; bottom: 16px; display: none; background: #5a1a14; color: #fff;
+      padding: 12px 16px; border-radius: 8px; z-index: 4; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <canvas id="unity-canvas" tabindex="-1"></canvas>
+  <div id="carga">
+    <h1>ZONA MUERTA</h1>
+    <p>Extracción · cooperativo para 1-4 jugadores</p>
+    <div id="barra"><div id="relleno"></div></div>
+    <p id="estado">Cargando…</p>
+  </div>
+  <div id="girar">
+    <div class="icono">📱</div>
+    <div>Gira el teléfono para jugar en horizontal</div>
+  </div>
+  <div id="error"></div>
+  <script>
+    var canvas = document.querySelector("#unity-canvas");
+    var relleno = document.querySelector("#relleno");
+    var estado = document.querySelector("#estado");
+    var errorBox = document.querySelector("#error");
+    var tactil = window.matchMedia("(pointer: coarse)").matches;
+
+    // Resolución interna: en móviles se limita la densidad de píxeles para mantener la fluidez.
+    var maxDpr = tactil ? 1.5 : 2;
+
+    function mostrarError(msg) { errorBox.textContent = msg; errorBox.style.display = "block"; }
+
+    // En la primera pulsación: pantalla completa y bloqueo horizontal donde el navegador lo permite
+    // (Android Chrome). En iPhone Safari no existe; se muestra el aviso de girar.
+    function pantallaCompleta() {
+      if (!tactil) return;
+      var el = document.documentElement;
+      var req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req && !document.fullscreenElement && !document.webkitFullscreenElement) {
+        try {
+          var p = req.call(el, { navigationUI: "hide" });
+          if (p && p.then) p.then(function () {
+            if (screen.orientation && screen.orientation.lock) screen.orientation.lock("landscape").catch(function () {});
+          }).catch(function () {});
+        } catch (e) {}
+      }
+    }
+    document.addEventListener("touchend", pantallaCompleta, { passive: true });
+    document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+    document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+
+    var buildUrl = "Build";
+    var config = {
+      dataUrl: buildUrl + "/Web.data.unityweb",
+      frameworkUrl: buildUrl + "/Web.framework.js.unityweb",
+      codeUrl: buildUrl + "/Web.wasm.unityweb",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "DefaultCompany",
+      productName: "Zona Muerta Extraccion",
+      productVersion: "0.2",
+      devicePixelRatio: Math.min(window.devicePixelRatio || 1, maxDpr),
+      showBanner: function (msg, type) { if (type === "error") mostrarError(msg); else console.log(msg); },
+    };
+
+    var script = document.createElement("script");
+    script.src = buildUrl + "/Web.loader.js";
+    script.onload = function () {
+      createUnityInstance(canvas, config, function (progress) {
+        relleno.style.width = Math.round(progress * 100) + "%";
+        estado.textContent = progress < 0.9 ? "Descargando… " + Math.round(progress * 100) + "%" : "Preparando…";
+      }).then(function (instance) {
+        window.unityInstance = instance;
+        document.querySelector("#carga").style.display = "none";
+        canvas.focus();
+      }).catch(function (message) {
+        mostrarError("No se pudo iniciar el juego: " + message);
+      });
+    };
+    script.onerror = function () { mostrarError("No se pudo descargar el juego. Revisa la conexión."); };
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>
