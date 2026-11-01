@@ -74,6 +74,32 @@
     document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
 
+    // Solo para pruebas (?zmvoicetest en la dirección): registra en la consola el nivel del audio de
+    // voz que llega y que sale por WebRTC (el SDK web de Vivox no da eventos de energía). No hace nada
+    // en partidas normales y no guarda ni envía audio a ninguna parte.
+    if (location.search.indexOf("zmvoicetest") >= 0 && window.RTCPeerConnection) {
+      var pcs = [];
+      var Orig = window.RTCPeerConnection;
+      window.RTCPeerConnection = function (a, b) { var pc = new Orig(a, b); pcs.push(pc); return pc; };
+      window.RTCPeerConnection.prototype = Orig.prototype;
+      setInterval(function () {
+        pcs.forEach(function (pc, i) {
+          if (pc.connectionState === "closed") return;
+          pc.getStats().then(function (stats) {
+            var inLvl = 0, inBytes = 0, outLvl = 0, outBytes = 0;
+            stats.forEach(function (r) {
+              if (r.type === "inbound-rtp" && r.kind === "audio") { inBytes += r.bytesReceived || 0; inLvl = Math.max(inLvl, r.audioLevel || 0); }
+              if (r.type === "outbound-rtp" && r.kind === "audio") outBytes += r.bytesSent || 0;
+              if (r.type === "media-source" && r.kind === "audio") outLvl = Math.max(outLvl, r.audioLevel || 0);
+            });
+            var au = Array.prototype.map.call(document.querySelectorAll("audio"), function (a) { return (a.paused ? "pausado" : "sonando") + (a.muted ? "/mudo" : "") + "/vol" + a.volume + "/pistas" + (a.srcObject && a.srcObject.getAudioTracks ? a.srcObject.getAudioTracks().length : 0); }).join(","); console.log("[ZM-WEBRTC] audio=[" + au + "]"); document.querySelectorAll("audio").forEach(function (a) { if (!a.srcObject || a.zmAn) return; try { var ctx = window.zmCtx || (window.zmCtx = new AudioContext()); var src = ctx.createMediaStreamSource(a.srcObject); var an = ctx.createAnalyser(); an.fftSize = 2048; src.connect(an); a.zmAn = an; a.zmMax = 0; setInterval(function () { var d = new Float32Array(an.fftSize); an.getFloatTimeDomainData(d); var s = 0; for (var k = 0; k < d.length; k++) s += d[k] * d[k]; var r = Math.sqrt(s / d.length); if (r > a.zmMax) a.zmMax = r; }, 50); } catch (e) { console.log("[ZM-WEBRTC] analizador: " + e); } }); var mx = Array.prototype.map.call(document.querySelectorAll("audio"), function (a) { var m = (a.zmMax || 0).toFixed(3); a.zmMax = 0; return m; }).join(","); console.log("[ZM-WEBRTC] voz recibida (RMS max 2s)=[" + mx + "]");
+            console.log("[ZM-WEBRTC] pc" + i + " " + pc.connectionState + " entra " + inBytes + "B nivel " + inLvl.toFixed(3) +
+                        " · sale " + outBytes + "B nivel " + outLvl.toFixed(3));
+          });
+        });
+      }, 2000);
+    }
+
     var buildUrl = "Build";
     var config = {
       dataUrl: buildUrl + "/Web.data.unityweb",
