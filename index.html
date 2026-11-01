@@ -74,6 +74,24 @@
     document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
 
+    // Chat de voz (Vivox web) en Chrome, Edge y Safari: el servidor anuncia en el SDP un SSRC truncado
+    // (p. ej. 1549891) pero envía el audio con el real (1549891783). Chrome ata la pista al SSRC
+    // anunciado y el audio real queda fuera: se oye silencio. Quitando las líneas a=ssrc de la oferta
+    // de Vivox, Chrome asocia a la pista el flujo que llega. Firefox ya lo hace así por su cuenta.
+    (function () {
+      var PC = window.RTCPeerConnection;
+      if (!PC || /firefox/i.test(navigator.userAgent)) return;
+      var orig = PC.prototype.setRemoteDescription;
+      PC.prototype.setRemoteDescription = function (desc) {
+        try {
+          if (desc && desc.type === "offer" && desc.sdp && desc.sdp.indexOf("s=Vivox") >= 0 && desc.sdp.indexOf("a=ssrc:") >= 0) {
+            var sdp = desc.sdp.split(/\r?\n/).filter(function (l) { return l.indexOf("a=ssrc:") !== 0; }).join("\r\n");
+            arguments[0] = { type: desc.type, sdp: sdp };
+          }
+        } catch (e) {}
+        return orig.apply(this, arguments);
+      };
+    })();
     // Solo para pruebas (?zmvoicetest en la dirección): registra en la consola el nivel del audio de
     // voz que llega y que sale por WebRTC (el SDK web de Vivox no da eventos de energía). No hace nada
     // en partidas normales y no guarda ni envía audio a ninguna parte.
